@@ -1,0 +1,29 @@
+# Creates a release as soon as a version tag such as v0.2.0 is pushed.
+# Nothing is built here: the ZIP comes from deploy/ in the repository (built locally with ./gradlew deploy).
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Create the release with the ZIP from deploy/
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          zip="deploy/IssueManager-$version.zip"
+          if [ ! -f "$zip" ]; then
+            echo "::error::$zip is missing. Set the version in gradle.properties, run ./gradlew deploy and commit the ZIP."
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" "$zip" --title "IssueManager $version" --generate-notes

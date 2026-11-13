@@ -1,0 +1,19 @@
+<idea-plugin>
+    <id>de.toffano.issuemanager</id>
+    <name>IssueManager</name>
+    <vendor>Marco Toffano</vendor>
+    <description><![CDATA[
+        <p>Shows the GitHub issues of the open repository as a list in Rider and connects them with branches and
+        worktrees.</p>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>Git4Idea</depends>
+    <depends>org.jetbrains.plugins.github</depends>
+    <depends>com.intellij.platform.tasks</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="Issues" anchor="left" icon="/icons/issues.svg"
+                    factoryClass="de.toffano.issuemanager.IssuesToolWindowFactory"/>
+    </extensions>
+</idea-plugin>

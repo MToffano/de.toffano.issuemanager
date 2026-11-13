@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 13 13" fill="none">
+  <!-- Open issue: ring with a dot -->
+  <circle cx="6.5" cy="6.5" r="4.5" stroke="#CED0D6" stroke-width="1.2"/>
+  <circle cx="6.5" cy="6.5" r="1.6" fill="#CED0D6"/>
+</svg>

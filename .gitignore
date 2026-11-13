@@ -1,0 +1,30 @@
+# Build and IDE
+.DS_Store
+.gradle
+.idea
+.intellijPlatform
+.kotlin
+build
+
+# Plans and working notes stay local
+plans/
+
+# AI agents and LLM tools: none of this goes to GitHub
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.mcp.json
+AGENTS.md
+GEMINI.md
+.gemini/
+.codex/
+.cursor/
+.cursorrules
+.windsurf/
+.windsurfrules
+.aider*
+.continue/
+.github/copilot-instructions.md
+.github/instructions/
+.github/prompts/
+.github/chatmodes/

@@ -1,13 +1,43 @@
 <idea-plugin>
     <id>de.toffano.issuemanager</id>
     <name>IssueManager</name>
-    <vendor>Marco Toffano</vendor>
+    <vendor email="kontakt@toffano.de" url="https://github.com/MToffano/de.toffano.issuemanager">Marco Toffano</vendor>
     <description><![CDATA[
         <p>Shows the GitHub issues of the open repository as a list in Rider and connects them with branches and
         worktrees.</p>
+        <ul>
+            <li>Issue list in a tool window, with search, sorting and filters, grouped by milestone</li>
+            <li>Description and comments of an issue as a tab in the editor, including images</li>
+            <li>Write a comment, assign an issue to yourself or remove your assignment</li>
+            <li>Open an issue in a new, the current or an existing branch, and switch to its branch</li>
+            <li>Open Rider's "New Worktree" dialog for an issue, and jump to the window of a worktree</li>
+            <li>Texts in English and German, following the language of the operating system</li>
+        </ul>
+        <p><b>Getting started:</b> configure a GitHub account in Rider (Settings | Version Control | GitHub) and open
+        a project whose <code>origin</code> remote points to github.com. The issues appear in the "Issues" tool
+        window. The plugin uses the account from Rider and needs no token of its own.</p>
+        <p>Source code and documentation:
+        <a href="https://github.com/MToffano/de.toffano.issuemanager">github.com/MToffano/de.toffano.issuemanager</a></p>
     ]]></description>
+    <change-notes><![CDATA[
+        <p><b>0.3.1</b></p>
+        <ul>
+            <li>The plugin is offered for Rider only</li>
+            <li>Vendor contact details and a longer description</li>
+        </ul>
+        <p><b>0.3.0</b></p>
+        <ul>
+            <li>Issue list with search, sorting and filters, grouped by milestone</li>
+            <li>Description and comments of an issue as a tab in the editor, including images</li>
+            <li>Write a comment, assign an issue to yourself or remove your assignment</li>
+            <li>Open an issue in a new, the current or an existing branch, and switch to its branch</li>
+            <li>Worktrees: open Rider's "New Worktree" dialog for an issue, and jump to the window of a worktree</li>
+            <li>Texts in English and German, following the language of the operating system</li>
+        </ul>
+    ]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.rider</depends>
     <depends>Git4Idea</depends>
     <depends>org.jetbrains.plugins.github</depends>
     <depends>com.intellij.platform.tasks</depends>

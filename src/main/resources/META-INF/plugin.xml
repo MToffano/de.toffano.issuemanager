@@ -6,10 +6,12 @@
         <p>Shows the GitHub issues of the open repository as a list in Rider and connects them with branches and
         worktrees.</p>
         <ul>
-            <li>Issue list in a tool window, with search, sorting and filters, grouped by milestone</li>
+            <li>Issue list in a tool window, with search, sorting and filters, grouped by milestone, type, label or assignee</li>
             <li>Description and comments of an issue as a tab in the editor, including images</li>
             <li>Write a comment, assign an issue to yourself or remove your assignment</li>
             <li>Open an issue in a new, the current or an existing branch, and switch to its branch</li>
+            <li>Start an issue with a command in the terminal, for example a coding agent that gets the issue as its
+            prompt</li>
             <li>Open Rider's "New Worktree" dialog for an issue, and jump to the window of a worktree</li>
             <li>Texts in English and German, following the language of the operating system</li>
         </ul>
@@ -20,6 +22,16 @@
         <a href="https://github.com/MToffano/de.toffano.issuemanager">github.com/MToffano/de.toffano.issuemanager</a></p>
     ]]></description>
     <change-notes><![CDATA[
+        <p><b>0.4.0</b></p>
+        <ul>
+            <li>Start an issue with a command in a new terminal tab, for example a coding agent that gets the issue
+            as its prompt. Commands and prompt templates are set up under Settings | Tools | IssueManager</li>
+            <li>A command can check out the branch of the issue first, or offer the names for a new branch</li>
+            <li>Copy the prompt for an issue to the clipboard</li>
+            <li>Group the list by milestone, type, label or assignee</li>
+            <li>Hide issues by type or label</li>
+            <li>The issue type is shown in the content of an issue</li>
+        </ul>
         <p><b>0.3.1</b></p>
         <ul>
             <li>The plugin is offered for Rider only</li>
@@ -41,8 +53,15 @@
     <depends>Git4Idea</depends>
     <depends>org.jetbrains.plugins.github</depends>
     <depends>com.intellij.platform.tasks</depends>
+    <depends>org.jetbrains.plugins.terminal</depends>
+    <!-- The API for terminal tabs lives in a module of the terminal plugin with a class loader of its own -->
+    <dependencies>
+        <module name="intellij.terminal.frontend"/>
+    </dependencies>
 
     <extensions defaultExtensionNs="com.intellij">
+        <applicationConfigurable parentId="tools" id="de.toffano.issuemanager.settings" displayName="IssueManager"
+                                 instance="de.toffano.issuemanager.IssueManagerConfigurable"/>
         <toolWindow id="Issues" anchor="left" icon="/icons/issues.svg"
                     factoryClass="de.toffano.issuemanager.IssuesToolWindowFactory"/>
     </extensions>

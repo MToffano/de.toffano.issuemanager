@@ -19,6 +19,8 @@ data class GitHubIssue(
     val url: String,
     val closed: Boolean,
     val milestone: String?,
+    /** Issue type such as "Bug" or "Feature". Only repositories of an organization have types. */
+    val type: String?,
     /** Time of the last change as GitHub delivers it (ISO 8601, sortable as text) */
     val updatedAt: String,
     /** GitHub user names of the assignees */
@@ -27,6 +29,18 @@ data class GitHubIssue(
     /** Branches of open pull requests that close the issue, and branches linked on GitHub */
     val branches: List<String>,
 )
+
+/**
+ * An issue as Markdown.
+ *
+ * @param description the first post: title, a line with link, state, milestone, type, assignees and labels, then
+ * author, date and the description
+ * @param comments all comments with author and date, each starting with a separator line. Empty without comments.
+ */
+class IssueContent(val description: String, val comments: String) {
+    /** Description and comments */
+    val all: String get() = description + comments
+}
 
 /** The GitHub account in Rider no longer has a valid token and needs a new login. */
 class GitHubLoginNeeded(val account: GithubAccount, cause: Throwable) :
@@ -63,6 +77,7 @@ object GitHubIssues {
             nodes { ... on Issue {
               id number title url state updatedAt
               milestone { title }
+              issueType { name }
               assignees(first: 10) { nodes { login } }
               labels(first: 20) { nodes { name } }
               linkedBranches(first: 5) { nodes { ref { name } } }
@@ -119,10 +134,10 @@ object GitHubIssues {
     }
 
     /**
-     * Description and comments of an issue as Markdown, for the preview in the editor.
+     * Description and comments of an issue as Markdown, for the preview in the editor and for prompts.
      * Blocks, so call it in the background only.
      */
-    fun loadMarkdown(project: Project, repo: String, issue: GitHubIssue, indicator: ProgressIndicator): String {
+    fun loadContent(project: Project, repo: String, issue: GitHubIssue, indicator: ProgressIndicator): IssueContent {
         val (owner, name) = repo.split("/")
         val details = query(account(project), DETAILS_QUERY, mapOf("owner" to owner, "name" to name, "number" to issue.number), indicator)
             .child("repository").child("issue")
@@ -134,13 +149,14 @@ object GitHubIssues {
             "[${text("preview.openOnGitHub")}](${issue.url})",
             text(if (issue.closed) "preview.closed" else "preview.open"),
             issue.milestone?.let { "Milestone $it" },
+            issue.type,
             issue.assignees.takeIf { it.isNotEmpty() }?.joinToString { "@$it" },
             issue.labels.takeIf { it.isNotEmpty() }?.joinToString { "`$it`" },
         )
         fun text(entry: Map<*, *>) = signImageUrls(entry["body"] as String, entry["bodyHTML"] as String)
 
         val comments = details.child("comments").nodes().joinToString("") { "\n\n---\n\n${byline(it)}\n\n${text(it)}" }
-        return "# #${issue.number} ${issue.title}\n\n${facts.joinToString(" · ")}\n\n${byline(details)}\n\n${text(details)}$comments\n"
+        return IssueContent("# #${issue.number} ${issue.title}\n\n${facts.joinToString(" · ")}\n\n${byline(details)}\n\n${text(details)}", comments)
     }
 
     /**
@@ -215,6 +231,7 @@ object GitHubIssues {
             url = issue["url"] as String,
             closed = issue["state"] == "CLOSED",
             milestone = issue.child("milestone")["title"] as String?,
+            type = issue.child("issueType")["name"] as String?,
             updatedAt = issue["updatedAt"] as String,
             assignees = issue.child("assignees").nodes().map { it["login"] as String },
             labels = issue.child("labels").nodes().map { it["name"] as String },

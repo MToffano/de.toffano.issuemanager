@@ -10,8 +10,8 @@ dependencies {
         // Build against the installed Rider, no SDK download
         local("/Applications/Rider.app")
 
-        // Bundled with Rider: Git, GitHub account, task management (TaskManager)
-        bundledPlugins("Git4Idea", "org.jetbrains.plugins.github", "com.intellij.platform.tasks")
+        // Bundled with Rider: Git, GitHub account, task management (TaskManager), terminal
+        bundledPlugins("Git4Idea", "org.jetbrains.plugins.github", "com.intellij.platform.tasks", "org.jetbrains.plugins.terminal")
     }
 }
 

@@ -2,6 +2,7 @@ package de.toffano.issuemanager
 
 import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
+import com.intellij.ide.DataManager
 import com.intellij.ide.impl.ProjectUtil
 import java.nio.file.Path
 import com.intellij.ide.util.PropertiesComponent
@@ -16,6 +17,7 @@ import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.testFramework.LightVirtualFile
 import com.intellij.openapi.progress.ProgressIndicator
@@ -25,6 +27,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.actionSystem.Separator
 import com.intellij.openapi.ui.InputValidator
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.vcs.VcsTaskHandler
 import com.intellij.tasks.BranchInfo
 import com.intellij.tasks.LocalTask
@@ -41,6 +44,7 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.ui.tree.TreeUtil
+import git4idea.branch.GitBrancher
 import git4idea.repo.GitRepository
 import git4idea.repo.GitRepositoryChangeListener
 import git4idea.repo.GitRepositoryManager
@@ -74,6 +78,23 @@ enum class IssueSort(private val labelKey: String, val comparator: Comparator<Gi
     val label: String get() = text(labelKey)
 }
 
+/**
+ * How the open issues are grouped, by milestone, type, label or assignee. An issue with several labels or assignees
+ * appears in each of their groups. If no open issue belongs to a group, the list is flat.
+ */
+enum class IssueGrouping(private val labelKey: String, private val emptyKey: String, val groupsOf: (GitHubIssue) -> List<String>) {
+    MILESTONE("group.by.milestone", "group.noMilestone", { listOfNotNull(it.milestone) }),
+    TYPE("group.by.type", "group.noType", { listOfNotNull(it.type) }),
+    LABEL("group.by.label", "group.noLabel", { it.labels }),
+    ASSIGNEE("group.by.assignee", "group.noAssignee", { it.assignees }),
+    NONE("group.by.none", "group.by.none", { emptyList() });
+
+    val label: String get() = text(labelKey)
+
+    /** Title of the group for issues that have no milestone, label or assignee */
+    val emptyLabel: String get() = text(emptyKey)
+}
+
 /** Filled dot in the text colour of the row, marks issues of the checked-out branch. */
 private object ActiveDot : Icon {
     override fun getIconWidth() = JBUI.scale(12)
@@ -104,6 +125,16 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
         /** Does the issue belong to the checked-out branch? What counts is the branch the row shows. */
         val onCurrentBranch = shownBranches.any { it in currentBranches }
 
+        /**
+         * The branch of the issue, empty if it has none. Of several branches the one that is checked out counts,
+         * here or in another worktree.
+         */
+        val branch: String = (
+            shownBranches.firstOrNull { it in currentBranches }
+                ?: shownBranches.firstOrNull { it in otherWorktrees }
+                ?: shownBranches.firstOrNull()
+            ).orEmpty()
+
         /** Path of the other worktree that has the branch of the issue checked out, otherwise `null`. */
         val worktree: String? = shownBranches.firstNotNullOfOrNull { otherWorktrees[it] }
         val worktreeName: String? = worktree?.substringAfterLast('/')
@@ -127,6 +158,17 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
     private var sort: IssueSort
         get() = IssueSort.entries.firstOrNull { it.name == settings.getValue("issuemanager.sort") } ?: IssueSort.NEWEST
         set(value) = settings.setValue("issuemanager.sort", value.name)
+    private var grouping: IssueGrouping
+        get() = IssueGrouping.entries.firstOrNull { it.name == settings.getValue("issuemanager.grouping") } ?: IssueGrouping.MILESTONE
+        set(value) = settings.setValue("issuemanager.grouping", value.name)
+    /** Issues with one of these labels are not shown */
+    private var hiddenLabels: List<String>
+        get() = settings.getList("issuemanager.hiddenLabels").orEmpty()
+        set(value) = settings.setList("issuemanager.hiddenLabels", value)
+    /** Issues of these types are not shown */
+    private var hiddenTypes: List<String>
+        get() = settings.getList("issuemanager.hiddenTypes").orEmpty()
+        set(value) = settings.setList("issuemanager.hiddenTypes", value)
 
     private var issues = emptyList<GitHubIssue>()
     private var repoFound = false
@@ -218,6 +260,58 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
                 add(toggle(option.label, null, { sort == option }) { sort = option; rebuild() })
             }
         }
+        val groupingGroup = DefaultActionGroup(text("group.by"), true).apply {
+            templatePresentation.icon = AllIcons.Actions.GroupBy
+            IssueGrouping.entries.forEach { option ->
+                add(toggle(option.label, null, { grouping == option }) { grouping = option; rebuild() })
+            }
+        }
+        // One switch per type and per label of the loaded issues. A ticked entry hides its issues.
+        val hideGroup = object : ActionGroup(text("action.hide"), true), DumbAware {
+            override fun getActionUpdateThread() = ActionUpdateThread.EDT
+            override fun getChildren(event: AnActionEvent?): Array<AnAction> = (
+                hideSwitches(text("group.by.type"), issues.mapNotNull { it.type }, { hiddenTypes }) { hiddenTypes = it } +
+                    hideSwitches(text("group.by.label"), issues.flatMap { it.labels }, { hiddenLabels }) { hiddenLabels = it }
+                ).toTypedArray()
+        }
+        hideGroup.templatePresentation.icon = AllIcons.General.Filter
+
+        // Submenu with the commands from the settings, each with a submenu of the prompt templates.
+        // A click runs the command in a new terminal tab.
+        val startWithGroup = object : ActionGroup(text("action.startWith"), true), DumbAware {
+            override fun getActionUpdateThread() = ActionUpdateThread.EDT
+            override fun update(event: AnActionEvent) {
+                event.presentation.isEnabled = selected() != null
+            }
+            override fun getChildren(event: AnActionEvent?): Array<AnAction> = (
+                IssueManagerSettings.get().commands.map { command ->
+                    promptMenu(command.name, null) { prompt -> withContent { row, content -> start(command, prompt, row, content) } }
+                } +
+                    Separator.getInstance() +
+                    action(text("action.configureCommands"), null) {
+                        ShowSettingsUtil.getInstance().showSettingsDialog(project, IssueManagerConfigurable::class.java)
+                    }
+                ).toTypedArray()
+        }
+        startWithGroup.templatePresentation.icon = AllIcons.Actions.Execute
+
+        val copyAsPromptGroup = object : ActionGroup(text("action.copyAsPrompt"), true), DumbAware {
+            override fun getActionUpdateThread() = ActionUpdateThread.EDT
+            override fun update(event: AnActionEvent) {
+                event.presentation.isEnabled = selected() != null
+            }
+            override fun getChildren(event: AnActionEvent?): Array<AnAction> =
+                IssueManagerSettings.get().prompts.map { prompt ->
+                    action(prompt.name, null) {
+                        withContent { row, content ->
+                            copy(issuePrompt(prompt, row.issue, row.branch, content))
+                            status.text = text("status.promptCopied", row.issue.number)
+                        }
+                    }
+                }.toTypedArray()
+        }
+        copyAsPromptGroup.templatePresentation.icon = AllIcons.Actions.Copy
+
         val newBranchGroup = branchNameMenu(text("action.openInNewBranch"), AllIcons.Vcs.Branch, ::openInNewBranch)
 
         // Submenu with the local branches, a click checks the branch out and assigns it to the issue.
@@ -259,6 +353,8 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
                 toggle(text("action.onlyWithBranch"), AllIcons.Vcs.Branch, { onlyWithBranch }) { onlyWithBranch = it; rebuild() },
                 toggle(text("action.showClosed"), AllIcons.Actions.ToggleVisibility, { showClosed }) { showClosed = it; reload() },
                 sortGroup,
+                groupingGroup,
+                hideGroup,
                 openInBrowser,
                 assignToMe,
                 unassignMe,
@@ -282,6 +378,8 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
                 action(text("action.openInNewWorktree"), null, { freeForBranching() }) { newWorktree() },
                 action(text("action.openInCurrentBranch"), null, { freeForBranching() }) { openInCurrentBranch() },
                 action(text("action.openWorktree"), AllIcons.Actions.MenuOpen, { selectedRow()?.worktree != null }) { openWorktree() },
+                startWithGroup,
+                copyAsPromptGroup,
                 openInBrowser,
                 action(text("action.copyUrl"), AllIcons.Actions.Copy, { selected() != null }) { selected()?.let { copy(it.url) } },
                 action(text("action.copyNumber"), AllIcons.Actions.Copy, { selected() != null }) {
@@ -354,6 +452,8 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
         val currentBranches = GitRepositoryManager.getInstance(project).repositories.mapNotNull { it.currentBranch?.name }.toSet()
         val otherWorktrees = branchesInOtherWorktrees()
         shownWorktrees = otherWorktrees
+        val hiddenLabels = hiddenLabels.toSet()
+        val hiddenTypes = hiddenTypes.toSet()
         val rows = issues.sortedWith(sort.comparator)
             .map { issue ->
                 val task = tasks[GitHubIssueTask.idOf(issue.number)]
@@ -366,22 +466,26 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
                 )
             }
             .filter { !onlyWithBranch || it.taskBranches.isNotEmpty() || it.detectedBranches.isNotEmpty() }
+            .filter { row -> row.issue.type !in hiddenTypes && row.issue.labels.none { it in hiddenLabels } }
             .filter { it.matches(search.text.trim()) }
 
-        // Closed issues always come last, whatever the sorting and the milestone.
+        // Closed issues always come last, whatever the sorting and the grouping.
         val (closedRows, openRows) = rows.partition { it.issue.closed }
 
         root.removeAllChildren()
-        val grouped = openRows.any { it.issue.milestone != null }
+        val groupsOf = grouping.groupsOf
+        val grouped = openRows.any { groupsOf(it.issue).isNotEmpty() }
         tree.showsRootHandles = grouped
         if (!grouped) {
             (openRows + closedRows).forEach { root.add(DefaultMutableTreeNode(it)) }
         } else {
-            // Milestones by name, issues without a milestone at the end
-            val groups = openRows.groupBy { it.issue.milestone }
-            groups.keys.sortedWith(compareBy(nullsLast(String.CASE_INSENSITIVE_ORDER)) { it }).forEach { milestone ->
-                val group = DefaultMutableTreeNode("${milestone ?: text("group.noMilestone")} (${groups.getValue(milestone).size})")
-                groups.getValue(milestone).forEach { group.add(DefaultMutableTreeNode(it)) }
+            // Groups by name, issues that belong to no group at the end
+            val groups = openRows
+                .flatMap { row -> groupsOf(row.issue).ifEmpty { listOf(null) }.map { it to row } }
+                .groupBy({ it.first }, { it.second })
+            groups.keys.sortedWith(compareBy(nullsLast(String.CASE_INSENSITIVE_ORDER)) { it }).forEach { name ->
+                val group = DefaultMutableTreeNode("${name ?: grouping.emptyLabel} (${groups.getValue(name).size})")
+                groups.getValue(name).forEach { group.add(DefaultMutableTreeNode(it)) }
                 root.add(group)
             }
             if (closedRows.isNotEmpty()) {
@@ -418,7 +522,7 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
             private var markdown = ""
 
             override fun run(indicator: ProgressIndicator) {
-                markdown = GitHubIssues.loadMarkdown(project, repo, issue, indicator)
+                markdown = GitHubIssues.loadContent(project, repo, issue, indicator).all + "\n"
             }
 
             override fun onSuccess() {
@@ -433,6 +537,85 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
 
             override fun onThrowable(error: Throwable) = failed(text("error"), error) { showPreview(issue) }
         }.queue()
+    }
+
+    /** Loads description and comments of the selected issue in the background and hands them to [use]. */
+    private fun withContent(use: (Row, IssueContent) -> Unit) {
+        val row = selectedRow() ?: return
+        val repo = GitHubIssues.repoOf(project) ?: return
+        object : Task.Backgroundable(project, text("task.loadIssue", row.issue.number)) {
+            private var content: IssueContent? = null
+
+            override fun run(indicator: ProgressIndicator) {
+                content = GitHubIssues.loadContent(project, repo, row.issue, indicator)
+            }
+
+            override fun onSuccess() {
+                content?.let { use(row, it) }
+            }
+
+            override fun onThrowable(error: Throwable) = failed(text("error"), error) { withContent(use) }
+        }.queue()
+    }
+
+    /**
+     * Runs the command in a new terminal tab. If the issue is being worked on in another worktree, the terminal
+     * starts in the folder of that worktree, otherwise in the project folder. Commands that ask for it get the
+     * branch of the issue checked out first.
+     */
+    private fun start(command: StartCommand, prompt: PromptTemplate, row: Row, content: IssueContent) {
+        fun run(branch: String) {
+            val text = issuePrompt(prompt, row.issue, branch, content)
+            if (text.toByteArray().size > MAX_PROMPT_BYTES) {
+                status.text = text("status.promptTooLong", row.issue.number)
+                return
+            }
+            try {
+                // The folder of the other worktree only if the issue is not worked on here
+                val directory = row.worktree.takeIf { !row.onCurrentBranch } ?: project.basePath
+                startInTerminal(project, command, row.issue, branch, text, directory)
+            } catch (error: Exception) {
+                status.text = "${text("error.terminal")}: ${error.message}"
+            }
+        }
+        if (command.switchBranch) onIssueBranch(row, ::run) else run(row.branch)
+    }
+
+    /**
+     * Checks out the branch of the issue and then calls [then] with its name. If the issue has no branch here, a popup
+     * offers the same names as "Open in new branch". The chosen branch is created from the current state and
+     * assigned to the issue. Nothing is checked out if the branch already is, here or in another worktree.
+     * [then] is not called if the popup is closed without a choice or the checkout does not succeed.
+     */
+    private fun onIssueBranch(row: Row, then: (String) -> Unit) {
+        if (row.onCurrentBranch || row.worktree != null) return then(row.branch)
+        // A branch that only GitHub knows, such as the one of a pull request from a fork, cannot be checked out.
+        if (row.branch in existingBranchNames()) return checkOut(row, row.branch, isNew = false, then)
+        JBPopupFactory.getInstance().createActionGroupPopup(
+            text("popup.newBranch", row.issue.number),
+            DefaultActionGroup(branchNameActions(row.issue) { checkOut(row, it, isNew = true, then) }),
+            DataManager.getInstance().getDataContext(tree),
+            null,
+            false,
+        ).showCenteredInCurrentWindow(project)
+    }
+
+    /** Checks the branch out, creating it from the current state if it [isNew], and then calls [then] with its name. */
+    private fun checkOut(row: Row, branch: String, isNew: Boolean, then: (String) -> Unit) {
+        val repositories = GitRepositoryManager.getInstance(project).repositories
+        // Git calls this after the checkout, whether it succeeded or not.
+        val whenDone = Runnable {
+            val checkedOut = repositories.filter { it.currentBranchName == branch }
+            if (checkedOut.isEmpty()) {
+                status.text = text("status.notStarted", branch)
+            } else {
+                if (isNew) assign(row.issue, listOf(VcsTaskHandler.TaskInfo(branch, checkedOut.map { it.presentableUrl })))
+                then(branch)
+            }
+        }
+        val brancher = GitBrancher.getInstance(project)
+        if (isNew) brancher.checkoutNewBranchStartingFrom(branch, "HEAD", repositories, whenDone)
+        else brancher.checkout(branch, false, repositories, whenDone)
     }
 
     /** Asks for the text and, after OK, publishes it as a comment on the issue. The preview then shows the result. */
@@ -488,16 +671,19 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
             }
             override fun getChildren(event: AnActionEvent?): Array<AnAction> {
                 val issue = selected() ?: return emptyArray()
-                val suggestions = branchNameSuggestions(issue)
-                return (
-                    suggestions.map { name -> action(name, null) { open(issue, name) } } +
-                        Separator.getInstance() +
-                        action(text("action.otherName"), null) { askBranchName(issue, suggestions.first())?.let { open(issue, it) } }
-                    ).toTypedArray()
+                return branchNameActions(issue) { open(issue, it) }.toTypedArray()
             }
         }
         menu.templatePresentation.icon = icon
         return menu
+    }
+
+    /** One entry per suggested branch name for the issue and "Other name …". A click calls [open] with the name. */
+    private fun branchNameActions(issue: GitHubIssue, open: (String) -> Unit): List<AnAction> {
+        val suggestions = branchNameSuggestions(issue)
+        return suggestions.map { name -> action(name, null) { open(name) } } +
+            Separator.getInstance() +
+            action(text("action.otherName"), null) { askBranchName(issue, suggestions.first())?.let(open) }
     }
 
     /** Asks for a freely chosen branch name. `null` if the dialog was cancelled. */
@@ -619,6 +805,30 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
         if (error !is GitHubLoginNeeded || loginDeclined) return
         val wanted = Messages.showYesNoDialog(project, text("dialog.login", error.message), "IssueManager", null) == Messages.YES
         if (wanted && GHAccountsUtil.reLogIn(error.account, project)) retry() else loginDeclined = true
+    }
+
+    /**
+     * A titled section of the "Hide" menu with one switch per name. Hidden names are listed even if no loaded issue
+     * has them any more, so that they can be shown again. Empty if there are no names.
+     */
+    private fun hideSwitches(title: String, names: List<String>, hidden: () -> List<String>, set: (List<String>) -> Unit): List<AnAction> {
+        val switches = (names + hidden()).distinct().sortedWith(String.CASE_INSENSITIVE_ORDER).map { name ->
+            toggle(name, null, { name in hidden() }) { hide ->
+                set(if (hide) hidden() + name else hidden() - name)
+                rebuild()
+            }
+        }
+        return if (switches.isEmpty()) emptyList() else listOf(Separator.create(title)) + switches
+    }
+
+    /** A submenu with the prompt templates from the settings. With a single template the entry runs it directly. */
+    private fun promptMenu(title: String, icon: Icon?, run: (PromptTemplate) -> Unit): AnAction {
+        val prompts = IssueManagerSettings.get().prompts
+        prompts.singleOrNull()?.let { only -> return action(title, icon) { run(only) } }
+        return DefaultActionGroup(title, true).apply {
+            templatePresentation.icon = icon
+            prompts.forEach { prompt -> add(action(prompt.name, null) { run(prompt) }) }
+        }
     }
 
     private fun later(run: () -> Unit) = ApplicationManager.getApplication().invokeLater(run)

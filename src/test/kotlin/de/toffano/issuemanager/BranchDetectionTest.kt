@@ -11,7 +11,7 @@ class BranchDetectionTest {
         title: String = "Title",
         labels: List<String> = emptyList(),
     ) = GitHubIssue(
-        "id$number", number, title, "https://example.invalid/$number", false, null, "2026-11-13T00:00:00Z", emptyList(), labels, branches.toList(),
+        "id$number", number, title, "https://example.invalid/$number", false, null, null, "2026-11-13T00:00:00Z", emptyList(), labels, branches.toList(),
     )
 
     @Test

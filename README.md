@@ -24,14 +24,20 @@ ones.
 
 ## Installation
 
-1. Download the ZIP from the latest release on GitHub, or build the plugin yourself (see below):
-   `build/distributions/IssueManager-<version>.zip`
-2. In Rider: Settings → Plugins → gear icon → "Install Plugin from Disk", choose the ZIP
-3. Restart Rider
+The plugin is not in the JetBrains Marketplace. Rider installs and updates it from this repository instead:
+
+1. In Rider: Settings → Plugins → gear icon → "Manage Plugin Repositories…"
+2. Add this address and confirm with OK:
+   ```
+   https://raw.githubusercontent.com/MToffano/de.toffano.issuemanager/main/deploy/updatePlugins.xml
+   ```
+3. Search for "IssueManager" on the "Marketplace" tab, install it and restart Rider
 4. If the "Issues" tool window is not visible, show it through the three dots in the left tool window bar
 
-An update works the same way: install the new ZIP and restart Rider. For plugins installed by hand Rider shows the
-note "Cannot update plugin". It has no meaning here.
+Rider then offers new versions like any other plugin update. A new release can take a few minutes to show up.
+
+Without the repository: download the ZIP from the latest release on GitHub, or build the plugin yourself (see below),
+and choose it under Settings → Plugins → gear icon → "Install Plugin from Disk". An update works the same way.
 
 ## The list
 
@@ -266,14 +272,18 @@ would change a real project.
 The ZIP is built locally and committed in the `deploy/` folder. A release is created when a version tag is pushed:
 
 1. Set the version in `gradle.properties`, for example `version = 0.2.0`
-2. Run `./gradlew deploy test`. This creates `deploy/IssueManager-0.2.0.zip` and replaces the previous ZIP.
-3. Commit and push the changes including the ZIP
-4. Create and push the tag:
+2. Run `./gradlew deploy test`. This creates `deploy/IssueManager-0.2.0.zip`, replaces the previous ZIP and writes
+   the new version into `deploy/updatePlugins.xml`.
+3. Commit the changes including both files
+4. Create the tag and push it together with the commit:
 
 ```bash
 git tag v0.2.0
-git push origin v0.2.0
+git push origin main v0.2.0
 ```
+
+Rider reads `deploy/updatePlugins.xml` from `main` and downloads the ZIP from the release. Push commit and tag
+together, otherwise Rider offers a version whose download does not exist yet.
 
 The workflow `.github/workflows/release.yml` then creates a release and attaches the ZIP from `deploy/`. It does not
 build anything itself. If no ZIP in `deploy/` matches the tag, it stops with a message.

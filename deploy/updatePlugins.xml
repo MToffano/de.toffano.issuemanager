@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugins>
+  <plugin id="de.toffano.issuemanager"
+          url="https://github.com/MToffano/de.toffano.issuemanager/releases/download/v0.4.1/IssueManager-0.4.1.zip"
+          version="0.4.1">
+    <idea-version since-build="263"/>
+    <name>IssueManager</name>
+    <vendor url="https://github.com/MToffano/de.toffano.issuemanager">Marco Toffano</vendor>
+    <description>GitHub issues of the open repository in Rider, linked to branches and worktrees.</description>
+  </plugin>
+</plugins>

@@ -22,6 +22,11 @@
         <a href="https://github.com/MToffano/de.toffano.issuemanager">github.com/MToffano/de.toffano.issuemanager</a></p>
     ]]></description>
     <change-notes><![CDATA[
+        <p><b>0.4.1</b></p>
+        <ul>
+            <li>Updates through a custom plugin repository: add the address from the README under Settings | Plugins |
+            Manage Plugin Repositories, and Rider offers new versions by itself</li>
+        </ul>
         <p><b>0.4.0</b></p>
         <ul>
             <li>Start an issue with a command in a new terminal tab, for example a coding agent that gets the issue

@@ -13,6 +13,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.actionSystem.KeepPopupOnPerform
 import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -270,7 +271,7 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
         }
         // The types of the repository, the current one ticked, and "No type" at the end
         val typeGroup = issueMenu(text("action.changeType"), AllIcons.Actions.Edit, { choices.types.isNotEmpty() }) { issue ->
-            fun entry(name: String, type: Choice?) = toggle(name, null, { issue.type == type?.name }) {
+            fun entry(name: String, type: Choice?) = toggle(name, null, { issue.type == type?.name }, closesMenu = true) {
                 if (issue.type != type?.name) changeType(issue, type)
             }
             choices.types.map { entry(it.name, it) } + Separator.getInstance() + entry(text("group.noType"), null)
@@ -278,7 +279,7 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
         // All labels of the repository, the ones of the issue ticked. A click adds or removes one label.
         val labelGroup = issueMenu(text("action.labels"), AllIcons.Nodes.Tag, { choices.labels.isNotEmpty() }) { issue ->
             choices.labels.map { label ->
-                toggle(label.name, null, { label.name in issue.labels }) { add -> changeLabel(issue, label, add) }
+                toggle(label.name, null, { label.name in issue.labels }, closesMenu = true) { add -> changeLabel(issue, label, add) }
             }
         }
         val sortGroup = DefaultActionGroup(text("sort"), true).apply {
@@ -952,8 +953,15 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
             override fun actionPerformed(event: AnActionEvent) = run()
         }
 
-    private fun toggle(text: String, icon: Icon?, isOn: () -> Boolean, set: (Boolean) -> Unit): AnAction =
+    /**
+     * A menu entry with a tick. Rider keeps the menu open after a click on such an entry, depending on its settings.
+     * [closesMenu] closes it in any case, for changes on GitHub: their tick only updates after the list is reloaded.
+     */
+    private fun toggle(text: String, icon: Icon?, isOn: () -> Boolean, closesMenu: Boolean = false, set: (Boolean) -> Unit): AnAction =
         object : ToggleAction(text, null, icon), DumbAware {
+            init {
+                if (closesMenu) templatePresentation.keepPopupOnPerform = KeepPopupOnPerform.Never
+            }
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
             override fun isSelected(event: AnActionEvent) = isOn()
             override fun setSelected(event: AnActionEvent, state: Boolean) = set(state)

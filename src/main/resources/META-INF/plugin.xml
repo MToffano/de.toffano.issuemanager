@@ -23,6 +23,10 @@
         <a href="https://github.com/MToffano/de.toffano.issuemanager">github.com/MToffano/de.toffano.issuemanager</a></p>
     ]]></description>
     <change-notes><![CDATA[
+        <p><b>0.5.1</b></p>
+        <ul>
+            <li>The menus "Change type" and "Labels" close after a click</li>
+        </ul>
         <p><b>0.5.0</b></p>
         <ul>
             <li>Change the type of an issue, choosing from the types of the repository</li>

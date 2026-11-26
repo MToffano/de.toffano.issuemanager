@@ -22,6 +22,11 @@
         <a href="https://github.com/MToffano/de.toffano.issuemanager">github.com/MToffano/de.toffano.issuemanager</a></p>
     ]]></description>
     <change-notes><![CDATA[
+        <p><b>0.4.2</b></p>
+        <ul>
+            <li>"Open in current branch" is now called "Link to current branch": it links the checked-out branch to
+            the issue and checks nothing out</li>
+        </ul>
         <p><b>0.4.1</b></p>
         <ul>
             <li>Updates through a custom plugin repository: add the address from the README under Settings | Plugins |

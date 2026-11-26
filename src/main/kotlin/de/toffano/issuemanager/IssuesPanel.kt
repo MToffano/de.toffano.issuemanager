@@ -323,7 +323,7 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
             override fun getChildren(event: AnActionEvent?): Array<AnAction> {
                 val issue = selected() ?: return emptyArray()
                 val handler = VcsTaskHandler.getAllHandlers(project).firstOrNull { it.isEnabled } ?: return emptyArray()
-                // The current branch is covered by "Open in current branch", branches of other worktrees cannot be used here.
+                // The current branch is covered by "Link to current branch", branches of other worktrees cannot be used here.
                 val unavailable = handler.currentTasks.map { it.name } + branchesInOtherWorktrees().keys
                 val detected = detectBranches(issue, existingBranchNames())
                 return handler.allExistingTasks
@@ -376,7 +376,7 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
                 newBranchGroup,
                 existingBranchGroup,
                 action(text("action.openInNewWorktree"), null, { freeForBranching() }) { newWorktree() },
-                action(text("action.openInCurrentBranch"), null, { freeForBranching() }) { openInCurrentBranch() },
+                action(text("action.linkToCurrentBranch"), null, { freeForBranching() }) { linkToCurrentBranch() },
                 action(text("action.openWorktree"), AllIcons.Actions.MenuOpen, { selectedRow()?.worktree != null }) { openWorktree() },
                 startWithGroup,
                 copyAsPromptGroup,
@@ -719,7 +719,7 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
     /**
      * Assigns the checked-out branch to the issue. Nothing is checked out and no branch is created.
      */
-    private fun openInCurrentBranch() {
+    private fun linkToCurrentBranch() {
         val issue = selected() ?: return
         val handler = VcsTaskHandler.getAllHandlers(project).firstOrNull { it.isEnabled } ?: return
         assign(issue, handler.currentTasks.asList())

@@ -97,7 +97,7 @@ The context menu (right-click on an issue):
 | Assign to me, Remove my assignment | same as in the toolbar |
 | Switch to branch | checks out the assigned branch |
 | Open in new branch | creates a branch from the current state, checks it out and assigns it to the issue |
-| Open in current branch | assigns the checked-out branch to the issue without checking anything out |
+| Link to current branch | links the checked-out branch to the issue without checking anything out |
 | Open in existing branch | choice of the local branches, checks out the chosen one and assigns it to the issue |
 | Open in new worktree … | opens Rider's "New Worktree" dialog, the suggested branch name is on the clipboard |
 | Open worktree | brings the Rider window of the worktree in which the issue is being worked on to the front |
@@ -122,7 +122,7 @@ hotfix/13-offer-export-as-pdf
 - If the issue has the label `bug` or `type: bugfix`, `fix/` comes first, otherwise `feature/`.
 - `hotfix/` is meant for repositories whose pull request workflow treats hotfix branches separately.
 
-One branch can be assigned to several issues: check out the branch and choose "Open in current branch" for each
+One branch can be assigned to several issues: check out the branch and choose "Link to current branch" for each
 issue. If the branch already exists locally, "Open in existing branch" does it directly. Branches whose name matches
 the issue are listed first there. Branches that only exist on `origin` appear once they have been checked out in
 Rider.

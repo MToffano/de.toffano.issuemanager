@@ -23,6 +23,12 @@
         <a href="https://github.com/MToffano/de.toffano.issuemanager">github.com/MToffano/de.toffano.issuemanager</a></p>
     ]]></description>
     <change-notes><![CDATA[
+        <p><b>0.5.2</b></p>
+        <ul>
+            <li>A changed type or label shows in the list right away, before GitHub confirms it</li>
+            <li>Changes go to GitHub one after the other, in the order they were made. The list is loaded again once
+            all are done, and failed changes are listed in the status line</li>
+        </ul>
         <p><b>0.5.1</b></p>
         <ul>
             <li>The menus "Change type" and "Labels" close after a click</li>

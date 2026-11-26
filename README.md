@@ -85,6 +85,10 @@ Drag an issue onto another group to change it on GitHub. Grouped by type, the is
 "No type" removes it. Grouped by label, the issue gets the label of the group as well and keeps its other labels. The
 other groupings and the closed issues take no drop.
 
+A changed type or label shows in the list right away. The changes go to GitHub one after the other, in the order they
+were made. Once all are done, the list is loaded again and shows what GitHub has stored. If GitHub refuses a change,
+the status line lists it afterwards.
+
 ## Double-click and context menu
 
 A **double-click** or the **Enter key** opens description and comments of the issue as a tab in the editor, including

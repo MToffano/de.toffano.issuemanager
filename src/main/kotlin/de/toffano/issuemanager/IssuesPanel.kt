@@ -445,8 +445,8 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
         reload()
     }
 
-    /** Fetches the issues from GitHub again. */
-    private fun reload() {
+    /** Fetches the issues from GitHub again. A [note] is added to the status line afterwards. */
+    private fun reload(note: String = "") {
         val repo = GitHubIssues.repoOf(project)
         if (repo == null) {
             status.text = text("status.noRepo")
@@ -470,11 +470,14 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
                 choices = loadedChoices
                 val closedCount = loaded.count { it.closed }
                 status.text = text("status.open", repo, loaded.size - closedCount) +
-                    if (closed) text("status.closed", closedCount) else ""
+                    (if (closed) text("status.closed", closedCount) else "") + note
                 rebuild()
             }
 
-            override fun onThrowable(error: Throwable) = failed(text("error"), error) { reload() }
+            override fun onThrowable(error: Throwable) {
+                failed(text("error"), error) { reload(note) }
+                status.text += note
+            }
         }.queue()
     }
 
@@ -680,24 +683,80 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
         }.queue()
     }
 
-    /** Runs a change of the issue on GitHub in the background and then reloads the list. */
-    private fun changeOnGitHub(issue: GitHubIssue, title: String, change: (ProgressIndicator) -> Unit) {
-        object : Task.Backgroundable(project, "#${issue.number}: $title") {
-            override fun run(indicator: ProgressIndicator) = change(indicator)
+    /** A change of an issue on GitHub that waits in [pendingChanges]. */
+    private class PendingChange(
+        val issue: GitHubIssue, val title: String, val expected: GitHubIssue?, val change: (ProgressIndicator) -> Unit,
+    )
 
-            override fun onSuccess() = reload()
+    // Only used on the UI thread
+    private val pendingChanges = ArrayDeque<PendingChange>()
+    private var changeRunning = false
+    private var changeCount = 0
+    private val failedChanges = mutableListOf<String>()
+    private var firstChangeError = ""
 
-            override fun onThrowable(error: Throwable) = failed(text("error.failed", title), error) {}
+    /**
+     * Queues a change of the issue on GitHub. With [expected] the list shows the changed issue right away.
+     *
+     * The changes go to GitHub one after the other, in the order of the clicks: GitHub advises against sending
+     * changes at the same time, and only so does the last of several quick changes win. Once the queue is empty, the
+     * list is loaded again, so that it shows what GitHub has stored. Failed changes are collected and shown in the
+     * status line after that, so that no error is overwritten. A failed issue goes back to how it was until then.
+     */
+    private fun changeOnGitHub(
+        issue: GitHubIssue, title: String, expected: GitHubIssue? = null, change: (ProgressIndicator) -> Unit,
+    ) {
+        expected?.let(::showIssue)
+        pendingChanges.addLast(PendingChange(issue, title, expected, change))
+        changeCount++
+        if (!changeRunning) runNextChange()
+    }
+
+    private fun runNextChange() {
+        val next = pendingChanges.removeFirstOrNull()
+        if (next == null) {
+            changeRunning = false
+            val note = if (failedChanges.isEmpty()) "" else
+                "   " + text("status.changesFailed", failedChanges.size, changeCount, failedChanges.joinToString(), firstChangeError)
+            changeCount = 0
+            failedChanges.clear()
+            reload(note)
+            return
+        }
+        changeRunning = true
+        object : Task.Backgroundable(project, "#${next.issue.number}: ${next.title}") {
+            override fun run(indicator: ProgressIndicator) = next.change(indicator)
+
+            override fun onSuccess() = runNextChange()
+
+            override fun onThrowable(error: Throwable) {
+                if (next.expected != null) showIssue(next.issue)
+                if (failedChanges.isEmpty()) firstChangeError = error.message.orEmpty()
+                failedChanges += "#${next.issue.number} ${next.title}"
+                // Offers the login again if that was the cause
+                if (error is GitHubLoginNeeded) failed(text("error.failed", next.title), error) {}
+                runNextChange()
+            }
         }.queue()
+    }
+
+    /** Shows the issue in the list as given, until the list is loaded again. */
+    private fun showIssue(shown: GitHubIssue) {
+        issues = issues.map { if (it.number == shown.number) shown else it }
+        rebuild()
     }
 
     /** Sets the type of the issue on GitHub, `null` removes it. */
     private fun changeType(issue: GitHubIssue, type: Choice?) =
-        changeOnGitHub(issue, text("action.changeType")) { GitHubIssues.setType(project, issue, type, it) }
+        changeOnGitHub(issue, text("action.changeType"), issue.copy(type = type?.name)) {
+            GitHubIssues.setType(project, issue, type, it)
+        }
 
     /** Adds the label to the issue on GitHub or removes it. */
     private fun changeLabel(issue: GitHubIssue, label: Choice, add: Boolean) =
-        changeOnGitHub(issue, label.name) { GitHubIssues.setLabel(project, issue, label, add, it) }
+        changeOnGitHub(issue, label.name, issue.copy(labels = if (add) issue.labels + label.name else issue.labels - label.name)) {
+            GitHubIssues.setLabel(project, issue, label, add, it)
+        }
 
     /**
      * Lets an issue be dragged onto a group or onto an issue in a group. Grouped by type, it gets the type of the

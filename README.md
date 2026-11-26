@@ -77,10 +77,13 @@ From left to right:
 | Remove my assignment | remove yourself as assignee |
 | Search field | filters by number, title, assignee and branch |
 
-The plugin remembers the switches, the sorting, the grouping and the hidden types and labels per project. Issue
-types such as "Bug" or "Feature" only exist in repositories of an organization.
+The plugin remembers the switches, the sorting, the grouping and the hidden types and labels per project.
 
 When grouped by label or assignee, an issue with several of them appears in each of their groups.
+
+Drag an issue onto another group to change it on GitHub. Grouped by type, the issue gets the type of the group, and
+"No type" removes it. Grouped by label, the issue gets the label of the group as well and keeps its other labels. The
+other groupings and the closed issues take no drop.
 
 ## Double-click and context menu
 
@@ -95,6 +98,8 @@ The context menu (right-click on an issue):
 | Show content | same as the double-click |
 | Write comment … | a text field, after OK the comment is published on GitHub |
 | Assign to me, Remove my assignment | same as in the toolbar |
+| Change type | choice of the issue types of the repository, the current one is ticked. "No type" removes it |
+| Labels | all labels of the repository, the ones of the issue are ticked. A click adds or removes one label |
 | Switch to branch | checks out the assigned branch |
 | Open in new branch | creates a branch from the current state, checks it out and assigns it to the issue |
 | Link to current branch | links the checked-out branch to the issue without checking anything out |

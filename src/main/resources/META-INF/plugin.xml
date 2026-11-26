@@ -9,6 +9,7 @@
             <li>Issue list in a tool window, with search, sorting and filters, grouped by milestone, type, label or assignee</li>
             <li>Description and comments of an issue as a tab in the editor, including images</li>
             <li>Write a comment, assign an issue to yourself or remove your assignment</li>
+            <li>Change type and labels of an issue, also by dragging it onto a group</li>
             <li>Open an issue in a new, the current or an existing branch, and switch to its branch</li>
             <li>Start an issue with a command in the terminal, for example a coding agent that gets the issue as its
             prompt</li>
@@ -22,6 +23,13 @@
         <a href="https://github.com/MToffano/de.toffano.issuemanager">github.com/MToffano/de.toffano.issuemanager</a></p>
     ]]></description>
     <change-notes><![CDATA[
+        <p><b>0.5.0</b></p>
+        <ul>
+            <li>Change the type of an issue, choosing from the types of the repository</li>
+            <li>Add or remove labels of an issue, choosing from the labels of the repository</li>
+            <li>Drag an issue onto another group to change its type or add a label, when grouped by type or label</li>
+            <li>Rider shows these notes before installing an update</li>
+        </ul>
         <p><b>0.4.2</b></p>
         <ul>
             <li>"Open in current branch" is now called "Link to current branch": it links the checked-out branch to

@@ -19,7 +19,7 @@ data class GitHubIssue(
     val url: String,
     val closed: Boolean,
     val milestone: String?,
-    /** Issue type such as "Bug" or "Feature". Only repositories of an organization have types. */
+    /** Issue type such as "Bug" or "Feature" */
     val type: String?,
     /** Time of the last change as GitHub delivers it (ISO 8601, sortable as text) */
     val updatedAt: String,
@@ -41,6 +41,12 @@ class IssueContent(val description: String, val comments: String) {
     /** Description and comments */
     val all: String get() = description + comments
 }
+
+/** An issue type or label of the repository, with the ID GitHub needs to set it. */
+data class Choice(val id: String, val name: String)
+
+/** The issue types and labels the repository offers for its issues. */
+class RepoChoices(val types: List<Choice> = emptyList(), val labels: List<Choice> = emptyList())
 
 /** The GitHub account in Rider no longer has a valid token and needs a new login. */
 class GitHubLoginNeeded(val account: GithubAccount, cause: Throwable) :
@@ -65,8 +71,9 @@ fun signImageUrls(markdown: String, html: String): String {
 
 /**
  * Access to the issues on GitHub through the account configured in Rider.
- * Everything here only reads, with two exceptions: [addComment] publishes a comment,
- * [assignToMe] and [unassignMe] add or remove the logged-in user as assignee.
+ * Everything here only reads, with these exceptions: [addComment] publishes a comment,
+ * [assignToMe] and [unassignMe] add or remove the logged-in user as assignee,
+ * [setType] and [setLabel] change type and labels of an issue.
  */
 object GitHubIssues {
 
@@ -99,7 +106,16 @@ object GitHubIssues {
           addComment(input: { subjectId: ${'$'}id, body: ${'$'}body }) { clientMutationId }
         }"""
 
-    private val ORIGIN_URL = Regex("""github\.com[:/]([^/]+)/([^/]+?)(\.git)?/?$""")
+    // The first 100 labels are enough for the menu, repositories rarely have more.
+    private const val CHOICES_QUERY = """
+        query(${'$'}owner: String!, ${'$'}name: String!) {
+          repository(owner: ${'$'}owner, name: ${'$'}name) {
+            issueTypes(first: 50) { nodes { id name isEnabled } }
+            labels(first: 100, orderBy: { field: NAME, direction: ASC }) { nodes { id name } }
+          }
+        }"""
+
+    private val ORIGIN_URL =Regex("""github\.com[:/]([^/]+)/([^/]+?)(\.git)?/?$""")
 
     /** `owner/repo` from the `origin` remote of the open project, or `null`. */
     fun repoOf(project: Project): String? {
@@ -180,6 +196,47 @@ object GitHubIssues {
      */
     fun unassignMe(project: Project, issue: GitHubIssue, indicator: ProgressIndicator) =
         changeMyAssignment("removeAssigneesFromAssignable", project, issue, indicator)
+
+    /**
+     * The issue types switched on for the repository and its labels.
+     * Blocks, so call it in the background only.
+     */
+    fun loadChoices(project: Project, repo: String, indicator: ProgressIndicator): RepoChoices {
+        val (owner, name) = repo.split("/")
+        val repository = query(account(project), CHOICES_QUERY, mapOf("owner" to owner, "name" to name), indicator).child("repository")
+        fun choice(node: Map<*, *>) = Choice(node["id"] as String, node["name"] as String)
+        return RepoChoices(
+            types = repository.child("issueTypes").nodes().filter { it["isEnabled"] == true }.map(::choice),
+            labels = repository.child("labels").nodes().map(::choice),
+        )
+    }
+
+    /**
+     * Sets the type of the issue, `null` removes it.
+     * Changes something on GitHub. Blocks, so call it in the background only.
+     */
+    fun setType(project: Project, issue: GitHubIssue, type: Choice?, indicator: ProgressIndicator) {
+        query(
+            account(project),
+            "mutation(\$id: ID!, \$type: ID) { updateIssueIssueType(input: { issueId: \$id, issueTypeId: \$type }) { clientMutationId } }",
+            mapOf("id" to issue.id, "type" to type?.id),
+            indicator,
+        )
+    }
+
+    /**
+     * Adds the label to the issue or removes it, the other labels stay.
+     * Changes something on GitHub. Blocks, so call it in the background only.
+     */
+    fun setLabel(project: Project, issue: GitHubIssue, label: Choice, add: Boolean, indicator: ProgressIndicator) {
+        val mutation = if (add) "addLabelsToLabelable" else "removeLabelsFromLabelable"
+        query(
+            account(project),
+            "mutation(\$id: ID!, \$label: ID!) { $mutation(input: { labelableId: \$id, labelIds: [\$label] }) { clientMutationId } }",
+            mapOf("id" to issue.id, "label" to label.id),
+            indicator,
+        )
+    }
 
     private fun changeMyAssignment(mutation: String, project: Project, issue: GitHubIssue, indicator: ProgressIndicator) {
         val account = account(project)

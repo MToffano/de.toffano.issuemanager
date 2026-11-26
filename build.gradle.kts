@@ -36,6 +36,10 @@ tasks.register<Sync>("deploy") {
     // Local values only: the configuration cache cannot store references to the build script
     val version = project.version.toString()
     val updatePluginsFile = layout.projectDirectory.file("deploy/updatePlugins.xml").asFile
+    // Description and change notes are taken over from plugin.xml, so that Rider shows them before the update
+    val pluginXml = providers.fileContents(layout.projectDirectory.file("src/main/resources/META-INF/plugin.xml")).asText.get()
+    fun block(tag: String) = Regex("""<$tag>.*?</$tag>""", RegexOption.DOT_MATCHES_ALL).find(pluginXml)?.value
+        ?: error("plugin.xml has no <$tag>")
     val updatePlugins = """
         <?xml version="1.0" encoding="UTF-8"?>
         <plugins>
@@ -45,10 +49,14 @@ tasks.register<Sync>("deploy") {
             <idea-version since-build="$pluginSinceBuild"/>
             <name>IssueManager</name>
             <vendor url="https://github.com/MToffano/de.toffano.issuemanager">Marco Toffano</vendor>
-            <description>GitHub issues of the open repository in Rider, linked to branches and worktrees.</description>
+            DESCRIPTION
+            CHANGE_NOTES
           </plugin>
         </plugins>
-        """.trimIndent() + "\n"
+        """.trimIndent()
+        // Inserted after trimIndent, whose indentation would otherwise follow that of plugin.xml
+        .replace("DESCRIPTION", block("description"))
+        .replace("CHANGE_NOTES", block("change-notes")) + "\n"
 
     inputs.property("updatePlugins", updatePlugins)
     doLast {

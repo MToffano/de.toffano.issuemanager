@@ -57,6 +57,10 @@ import java.awt.Graphics2D
 import java.awt.RenderingHints
 import javax.swing.ToolTipManager
 import java.awt.datatransfer.StringSelection
+import java.awt.datatransfer.Transferable
+import javax.swing.DropMode
+import javax.swing.JComponent
+import javax.swing.TransferHandler
 import java.awt.event.FocusAdapter
 import java.awt.event.FocusEvent
 import java.awt.event.KeyAdapter
@@ -145,6 +149,12 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
                 .any { it.contains(text, ignoreCase = true) }
     }
 
+    /**
+     * A group heading of the list. [name] is the milestone, type, label or assignee, `null` for the group of issues
+     * without one and for the closed issues.
+     */
+    private class Group(val name: String?, val title: String, val closed: Boolean = false)
+
     private val settings = PropertiesComponent.getInstance(project)
     private var onlyMine: Boolean
         get() = settings.getBoolean("issuemanager.onlyMine", true)
@@ -171,6 +181,8 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
         set(value) = settings.setList("issuemanager.hiddenTypes", value)
 
     private var issues = emptyList<GitHubIssue>()
+    /** Types and labels of the repository for the menus "Change type" and "Labels" */
+    private var choices = RepoChoices()
     private var repoFound = false
     /** The worktrees the list was last drawn with */
     private var shownWorktrees = emptyMap<String, String>()
@@ -218,7 +230,7 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
                             append("   ${item.issue.assignees.joinToString { "@$it" }}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                         }
                     }
-                    is String -> append(item, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
+                    is Group -> append(item.title, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
                 }
             }
         }
@@ -245,14 +257,29 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
             }
         })
 
+        installDragToGroup()
+
         val openInBrowser = action(text("action.openInBrowser"), AllIcons.General.Web, { selected() != null }) {
             selected()?.let { BrowserUtil.browse(it.url) }
         }
         val assignToMe = action(text("action.assignToMe"), AllIcons.General.Add, { selected() != null }) {
-            changeMyAssignment(text("action.assignToMe"), GitHubIssues::assignToMe)
+            selected()?.let { issue -> changeOnGitHub(issue, text("action.assignToMe")) { GitHubIssues.assignToMe(project, issue, it) } }
         }
         val unassignMe = action(text("action.unassignMe"), AllIcons.General.Remove, { selected() != null }) {
-            changeMyAssignment(text("action.unassignMe"), GitHubIssues::unassignMe)
+            selected()?.let { issue -> changeOnGitHub(issue, text("action.unassignMe")) { GitHubIssues.unassignMe(project, issue, it) } }
+        }
+        // The types of the repository, the current one ticked, and "No type" at the end
+        val typeGroup = issueMenu(text("action.changeType"), AllIcons.Actions.Edit, { choices.types.isNotEmpty() }) { issue ->
+            fun entry(name: String, type: Choice?) = toggle(name, null, { issue.type == type?.name }) {
+                if (issue.type != type?.name) changeType(issue, type)
+            }
+            choices.types.map { entry(it.name, it) } + Separator.getInstance() + entry(text("group.noType"), null)
+        }
+        // All labels of the repository, the ones of the issue ticked. A click adds or removes one label.
+        val labelGroup = issueMenu(text("action.labels"), AllIcons.Nodes.Tag, { choices.labels.isNotEmpty() }) { issue ->
+            choices.labels.map { label ->
+                toggle(label.name, null, { label.name in issue.labels }) { add -> changeLabel(issue, label, add) }
+            }
         }
         val sortGroup = DefaultActionGroup(text("sort"), true).apply {
             templatePresentation.icon = AllIcons.ObjectBrowser.Sorted
@@ -370,6 +397,8 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
                 action(text("action.writeComment"), AllIcons.General.Balloon, { selected() != null }) { writeComment() },
                 assignToMe,
                 unassignMe,
+                typeGroup,
+                labelGroup,
                 action(text("action.switchToBranch"), AllIcons.Actions.CheckOut, { selected()?.let(::canSwitchTo) == true }) {
                     switchToBranch()
                 },
@@ -428,13 +457,16 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
         val closed = showClosed
         object : Task.Backgroundable(project, text("task.loadIssues")) {
             private var loaded = emptyList<GitHubIssue>()
+            private var loadedChoices = RepoChoices()
 
             override fun run(indicator: ProgressIndicator) {
                 loaded = GitHubIssues.load(project, repo, mine, closed, indicator)
+                loadedChoices = GitHubIssues.loadChoices(project, repo, indicator)
             }
 
             override fun onSuccess() {
                 issues = loaded
+                choices = loadedChoices
                 val closedCount = loaded.count { it.closed }
                 status.text = text("status.open", repo, loaded.size - closedCount) +
                     if (closed) text("status.closed", closedCount) else ""
@@ -484,12 +516,12 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
                 .flatMap { row -> groupsOf(row.issue).ifEmpty { listOf(null) }.map { it to row } }
                 .groupBy({ it.first }, { it.second })
             groups.keys.sortedWith(compareBy(nullsLast(String.CASE_INSENSITIVE_ORDER)) { it }).forEach { name ->
-                val group = DefaultMutableTreeNode("${name ?: grouping.emptyLabel} (${groups.getValue(name).size})")
+                val group = DefaultMutableTreeNode(Group(name, "${name ?: grouping.emptyLabel} (${groups.getValue(name).size})"))
                 groups.getValue(name).forEach { group.add(DefaultMutableTreeNode(it)) }
                 root.add(group)
             }
             if (closedRows.isNotEmpty()) {
-                val group = DefaultMutableTreeNode("${text("group.closed")} (${closedRows.size})")
+                val group = DefaultMutableTreeNode(Group(null, "${text("group.closed")} (${closedRows.size})", closed = true))
                 closedRows.forEach { group.add(DefaultMutableTreeNode(it)) }
                 root.add(group)
             }
@@ -647,16 +679,91 @@ class IssuesPanel(private val project: Project, parent: Disposable) : JPanel(Bor
         }.queue()
     }
 
-    /** Adds or removes the logged-in user as assignee of the selected issue and reloads the list. */
-    private fun changeMyAssignment(title: String, change: (Project, GitHubIssue, ProgressIndicator) -> Unit) {
-        val issue = selected() ?: return
+    /** Runs a change of the issue on GitHub in the background and then reloads the list. */
+    private fun changeOnGitHub(issue: GitHubIssue, title: String, change: (ProgressIndicator) -> Unit) {
         object : Task.Backgroundable(project, "#${issue.number}: $title") {
-            override fun run(indicator: ProgressIndicator) = change(project, issue, indicator)
+            override fun run(indicator: ProgressIndicator) = change(indicator)
 
             override fun onSuccess() = reload()
 
-            override fun onThrowable(error: Throwable) = failed(text("error.assignment", title), error) {}
+            override fun onThrowable(error: Throwable) = failed(text("error.failed", title), error) {}
         }.queue()
+    }
+
+    /** Sets the type of the issue on GitHub, `null` removes it. */
+    private fun changeType(issue: GitHubIssue, type: Choice?) =
+        changeOnGitHub(issue, text("action.changeType")) { GitHubIssues.setType(project, issue, type, it) }
+
+    /** Adds the label to the issue on GitHub or removes it. */
+    private fun changeLabel(issue: GitHubIssue, label: Choice, add: Boolean) =
+        changeOnGitHub(issue, label.name) { GitHubIssues.setLabel(project, issue, label, add, it) }
+
+    /**
+     * Lets an issue be dragged onto a group or onto an issue in a group. Grouped by type, it gets the type of the
+     * group. Grouped by label, it gets the label of the group as well and keeps its other labels.
+     * The other groupings and the closed issues take no drop.
+     */
+    private fun installDragToGroup() {
+        var dragged: GitHubIssue? = null
+
+        /** The change dropping the dragged issue at this place would make, `null` if none. */
+        fun dropChange(support: TransferHandler.TransferSupport): (() -> Unit)? {
+            val issue = dragged ?: return null
+            var node = (support.dropLocation as? JTree.DropLocation)?.path?.lastPathComponent as? DefaultMutableTreeNode ?: return null
+            if (node.userObject is Row) node = node.parent as? DefaultMutableTreeNode ?: return null
+            val group = node.userObject as? Group ?: return null
+            if (group.closed) return null
+            return when (grouping) {
+                IssueGrouping.TYPE -> {
+                    // "No type" removes the type. A type that is switched off on GitHub cannot be set.
+                    val type = group.name?.let { name -> choices.types.firstOrNull { it.name == name } ?: return null }
+                    if (issue.type == group.name) null else ({ changeType(issue, type) })
+                }
+                IssueGrouping.LABEL -> {
+                    val label = choices.labels.firstOrNull { it.name == group.name } ?: return null
+                    if (label.name in issue.labels) null else ({ changeLabel(issue, label, true) })
+                }
+                else -> null
+            }
+        }
+
+        tree.dragEnabled = true
+        tree.dropMode = DropMode.ON
+        tree.transferHandler = object : TransferHandler() {
+            override fun getSourceActions(component: JComponent) = MOVE
+
+            override fun createTransferable(component: JComponent): Transferable? {
+                val issue = selected() ?: return null
+                dragged = issue
+                return StringSelection("#${issue.number}")
+            }
+
+            override fun exportDone(source: JComponent, data: Transferable?, action: Int) {
+                dragged = null
+            }
+
+            override fun canImport(support: TransferSupport) = support.isDrop && dropChange(support) != null
+
+            override fun importData(support: TransferSupport): Boolean {
+                val change = dropChange(support) ?: return false
+                change()
+                return true
+            }
+        }
+    }
+
+    /** A submenu for the selected issue, enabled when an issue is selected and [enabled] holds. */
+    private fun issueMenu(title: String, icon: Icon, enabled: () -> Boolean, children: (GitHubIssue) -> List<AnAction>): ActionGroup {
+        val menu = object : ActionGroup(title, true), DumbAware {
+            override fun getActionUpdateThread() = ActionUpdateThread.EDT
+            override fun update(event: AnActionEvent) {
+                event.presentation.isEnabled = selected() != null && enabled()
+            }
+            override fun getChildren(event: AnActionEvent?): Array<AnAction> =
+                selected()?.let(children).orEmpty().toTypedArray()
+        }
+        menu.templatePresentation.icon = icon
+        return menu
     }
 
     /**

@@ -34,7 +34,8 @@ The plugin is not in the JetBrains Marketplace. Rider installs and updates it fr
 3. Search for "IssueManager" on the "Marketplace" tab, install it and restart Rider
 4. If the "Issues" tool window is not visible, show it through the three dots in the left tool window bar
 
-Rider then offers new versions like any other plugin update. A new release can take a few minutes to show up.
+Rider then offers new versions like any other plugin update. A new release can take a few minutes to show up. An
+update takes effect after a restart of Rider.
 
 Without the repository: download the ZIP from the latest release on GitHub, or build the plugin yourself (see below),
 and choose it under Settings → Plugins → gear icon → "Install Plugin from Disk". An update works the same way.

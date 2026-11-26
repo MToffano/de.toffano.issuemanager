@@ -1,4 +1,5 @@
-<idea-plugin>
+<!-- Installing or updating the plugin needs a restart of Rider: unloading it while Rider runs does not release it fully -->
+<idea-plugin require-restart="true">
     <id>de.toffano.issuemanager</id>
     <name>IssueManager</name>
     <vendor email="kontakt@toffano.de" url="https://github.com/MToffano/de.toffano.issuemanager">Marco Toffano</vendor>
@@ -23,6 +24,11 @@
         <a href="https://github.com/MToffano/de.toffano.issuemanager">github.com/MToffano/de.toffano.issuemanager</a></p>
     ]]></description>
     <change-notes><![CDATA[
+        <p><b>0.5.3</b></p>
+        <ul>
+            <li>Installing or updating the plugin asks for a restart of Rider. Before, the old version could stay in
+            memory after an update and Rider advised a restart</li>
+        </ul>
         <p><b>0.5.2</b></p>
         <ul>
             <li>A changed type or label shows in the list right away, before GitHub confirms it</li>
